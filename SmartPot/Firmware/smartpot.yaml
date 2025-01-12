@@ -1,0 +1,127 @@
+esphome:
+  name: smartpot
+  friendly_name: Smart Pot
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+wifi:
+  ssid: ""
+  password: ""
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ""
+    password: ""
+
+captive_portal:
+    
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ""
+
+ota:
+  password: ""
+#water level
+esp32_touch:
+  setup_mode: false
+
+binary_sensor:
+  - platform: status
+    name: "Water level Status"
+  - platform: esp32_touch
+    pin: GPIO4
+    threshold: 2000
+    id: capacitive_level_hack
+  - platform: gpio
+    name: "Water level Defeat"
+    id: "defeat"
+    pin:
+      number: 2
+      mode: INPUT_PULLUP
+      inverted: True
+sensor:
+  - platform: template
+    name: "Water level"
+    icon: mdi:car-coolant-level
+    update_interval: 50ms
+    unit_of_measurement: "%"
+    lambda: |-
+      ESP_LOGD("custom", "INT: %u", id(capacitive_level_hack).get_value());
+      int MIN_VALUE = 97;
+      int MAX_VALUE = 400;
+      int CURR_VALUE = id(capacitive_level_hack).get_value();
+      
+      if(MIN_VALUE <= CURR_VALUE && CURR_VALUE <= MAX_VALUE)
+      {
+        //ESP_LOGD("custom", "Return: %u", CURR_VALUE);
+        return CURR_VALUE;
+      }
+      else
+      {
+        if(CURR_VALUE < MIN_VALUE)
+        {
+          //ESP_LOGD("custom", "Return: %u", MIN_VALUE);
+          return MIN_VALUE;
+        }
+        else
+        { 
+          //ESP_LOGD("custom", "Return: %u", MAX_VALUE);
+          return MAX_VALUE;
+        }
+       }
+    accuracy_decimals: 0
+
+
+    filters:
+        - calibrate_polynomial:
+            degree: 3
+            datapoints:
+            # Map 0.0 (from sensor) to 0.0 (true value)
+            - 400 -> 0.0 #
+            - 312 -> 20.0 #
+            - 214 -> 40.0 #235
+            - 127 -> 60.0 #170 196
+            - 107 -> 80.0 #136 150 //// cim vic snizuju cislo, tim vic snizuju actual hodnotu
+            - 97 -> 100.0 #
+        - heartbeat: 50ms
+        - quantile:
+            window_size: 7
+            send_every: 4
+            send_first_at: 3
+            quantile: .9 
+  
+
+#soil moisture
+
+  - platform: adc
+    pin: 35
+    name: "Soil Moisture"
+    update_interval: 50ms
+    unit_of_measurement: "%"
+    filters:
+    - median:
+        window_size: 7
+        send_every: 4
+        send_first_at: 1
+    - calibrate_linear:
+        - 0.70 -> 100.00
+        - 1.06 -> 0.00
+    - lambda: |
+        if (x < 0) return 0; 
+        else if (x > 100) return 100;
+        else return (x);
+    accuracy_decimals: 0
+
+# Pump
+
+switch:
+  - platform: gpio
+    pin: 27
+    name: "Pump"
+
